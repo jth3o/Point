@@ -13,7 +13,7 @@ Set these in the Vercel project (Settings → Environment Variables). Use the sa
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `MONGODB_URI` | MongoDB connection string | `mongodb+srv://user:pass@cluster.mongodb.net/cript?retryWrites=true&w=majority` |
+| `MONGODB_URI` | MongoDB connection string | `MONGODB_URI=mongodb+srv://<db_username>:<db_password>@<your-cluster-url>/<database>?retryWrites=true&w=majority` |
 | `OPENAI_API_KEY` | OpenAI API key (server-side only) | `sk-...` |
 | `AUTH_SECRET` | Random secret for signing cookies/tokens | Generate with `npx auth secret` |
 | `AUTH_RESEND_KEY` | Resend API key for sending magic-link emails | `re_...` |
