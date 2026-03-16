@@ -31,4 +31,4 @@ yarn-error.log*
 # ide
 .idea
 .vscode
-cript-app/
+point-app/

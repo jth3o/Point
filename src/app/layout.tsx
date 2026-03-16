@@ -4,7 +4,7 @@ import { Providers } from "@/components/providers";
 import { AppHeader } from "@/components/AppHeader";
 
 export const metadata: Metadata = {
-  title: "Cript — Transcript to Study Deck",
+  title: "Point — Transcript to Study Deck",
   description: "Upload VTT transcripts, extract facts, build flashcards, study with spaced repetition.",
 };
 

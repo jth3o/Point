@@ -1,7 +1,7 @@
 import { connectDB } from "@/lib/db";
 import { User } from "@/models";
 
-const DEFAULT_EMAIL = "default@cript.local";
+const DEFAULT_EMAIL = "default@point.local";
 const DEFAULT_NAME = "Default User";
 
 /**

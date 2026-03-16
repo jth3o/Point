@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { requireAuth } from "@/lib/auth-server";
 import { StudySession } from "../StudySession";
 
 export default async function StudyCoursePage({
@@ -7,6 +8,7 @@ export default async function StudyCoursePage({
 }: {
   params: Promise<{ courseId: string }>;
 }) {
+  await requireAuth();
   const { courseId } = await params;
   return (
     <main className="min-h-screen p-6 max-w-2xl mx-auto">

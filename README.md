@@ -1,4 +1,4 @@
-# Cript
+# Point
 
 Transcript-to-study-deck pipeline: upload `.vtt` lecture transcripts → extract facts → atomic flashcards → Anki-like spaced repetition.
 
@@ -14,7 +14,7 @@ Transcript-to-study-deck pipeline: upload `.vtt` lecture transcripts → extract
 
    Copy `.env.local.example` to `.env.local` and set:
 
-   - `MONGODB_URI` — e.g. `mongodb://localhost:27017/cript`
+   - `MONGODB_URI` — e.g. `mongodb://localhost:27017/point`
    - `OPENAI_API_KEY` — required from Phase 3 (fact extraction / card generation)
 
 3. **Run**

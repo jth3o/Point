@@ -1,4 +1,4 @@
-# Testing Cript
+# Testing Point
 
 ## Prerequisites
 

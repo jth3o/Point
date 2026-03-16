@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import mongoose from "mongoose";
 
@@ -6,6 +7,16 @@ import mongoose from "mongoose";
  */
 export async function getSession() {
   return auth();
+}
+
+/**
+ * For server components (pages/layouts): require auth or redirect to sign-in.
+ * Use on protected routes instead of Edge middleware.
+ */
+export async function requireAuth() {
+  const session = await getSession();
+  if (!session) redirect("/");
+  return session;
 }
 
 /**

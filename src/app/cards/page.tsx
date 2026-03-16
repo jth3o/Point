@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { requireAuth } from "@/lib/auth-server";
 import { CardManagement } from "./CardManagement";
 
-export default function CardsPage() {
+export default async function CardsPage() {
+  await requireAuth();
   return (
     <main className="min-h-screen p-6 max-w-4xl mx-auto">
       <header className="flex items-center justify-between mb-8">

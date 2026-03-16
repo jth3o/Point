@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { requireAuth } from "@/lib/auth-server";
 import { DashboardCourseList } from "./DashboardCourseList";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requireAuth();
   return (
     <main className="min-h-screen p-6 max-w-4xl mx-auto">
       <header className="flex items-center justify-between mb-8">

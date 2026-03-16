@@ -1,16 +1,21 @@
 import NextAuth from "next-auth";
-import Resend from "next-auth/providers/resend";
+import Google from "next-auth/providers/google";
 import { MongoDBAdapter } from "@auth/mongodb-adapter";
 import { getAuthMongoClient } from "@/lib/mongodb-auth";
 
-const fromEmail = process.env.AUTH_FROM_EMAIL ?? "onboarding@resend.dev";
+if (!process.env.AUTH_SECRET) {
+  throw new Error(
+    "AUTH_SECRET is required. Add to .env.local (generate with: npx auth secret)"
+  );
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   adapter: MongoDBAdapter(getAuthMongoClient()),
   providers: [
-    Resend({
-      from: fromEmail,
+    Google({
+      clientId: process.env.AUTH_GOOGLE_ID!,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET!,
     }),
   ],
   session: { strategy: "database", maxAge: 30 * 24 * 60 * 60 },

@@ -1,10 +1,10 @@
 import mongoose from "mongoose";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { auth } from "@/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCourseById } from "@/lib/courses";
+import { requireAuth } from "@/lib/auth-server";
 import { CourseLectureList } from "./CourseLectureList";
 
 export default async function CoursePage({
@@ -12,9 +12,8 @@ export default async function CoursePage({
 }: {
   params: Promise<{ courseId: string }>;
 }) {
-  const session = await auth();
-  const userId = session?.user?.id ? new mongoose.Types.ObjectId(String(session.user.id)) : null;
-  if (!userId) notFound();
+  const session = await requireAuth();
+  const userId = new mongoose.Types.ObjectId(String(session.user.id));
   const { courseId } = await params;
   const course = await getCourseById(courseId, userId);
   if (!course) notFound();

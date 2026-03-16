@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { requireAuth } from "@/lib/auth-server";
 import { getLectureById } from "@/lib/lectures";
 import { LectureSummary } from "./LectureSummary";
 import { LectureCards } from "./LectureCards";
@@ -9,6 +10,7 @@ export default async function LecturePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireAuth();
   const { id } = await params;
   const lecture = await getLectureById(id);
   if (!lecture) notFound();
