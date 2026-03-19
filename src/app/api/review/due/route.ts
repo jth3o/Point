@@ -2,10 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { getLectureIdsForUser } from "@/lib/ownership";
-import { Card, ReviewState, Lecture } from "@/models";
+import { Card, ReviewState, ReviewLog, Lecture } from "@/models";
 import { getInitialNextDueAt } from "@/lib/srs";
+import type { ReviewStateType } from "@/models/ReviewState";
 
-const MAX_DUE = 50;
+const MAX_QUEUE = 50;
+const NEW_CARDS_PER_DAY = 20;
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
+function startOfUtcDay(d: Date): Date {
+  const x = new Date(d);
+  x.setUTCHours(0, 0, 0, 0);
+  return x;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -48,7 +65,21 @@ export async function GET(request: NextRequest) {
         return m;
       });
 
-    const due: Array<{
+    // Cap "new" introductions per day only within this queue scope (e.g. this course).
+    // A global count wrongly hid all new cards in other courses after 20 reviews elsewhere.
+    const scopeCardIds = cards.map((c) => c._id);
+    const newIntroducedToday =
+      scopeCardIds.length === 0
+        ? []
+        : await ReviewLog.distinct("cardId", {
+            userId,
+            reviewedAt: { $gte: startOfUtcDay(now) },
+            previousState: "new",
+            cardId: { $in: scopeCardIds },
+          });
+    const newSlotsLeft = Math.max(0, NEW_CARDS_PER_DAY - newIntroducedToday.length);
+
+    type Row = {
       _id: string;
       lectureId: string;
       courseId: string;
@@ -58,30 +89,45 @@ export async function GET(request: NextRequest) {
       topic: string;
       state: string;
       nextDueAt: string;
-    }> = [];
+    };
+
+    const relearning: Row[] = [];
+    const learning: Row[] = [];
+    const reviewDue: Row[] = [];
+    const newCards: Row[] = [];
 
     for (const card of cards) {
       const rs = stateMap[String(card._id)];
       const nextDue = rs ? new Date(rs.nextDueAt) : getInitialNextDueAt();
-      if (nextDue <= now) {
-        due.push({
-          _id: String(card._id),
-          lectureId: String(card.lectureId),
-          courseId: lectureToCourse[String(card.lectureId)] ?? "",
-          front: card.front,
-          back: card.back,
-          cardType: card.cardType,
-          topic: card.topic,
-          state: rs?.state ?? "new",
-          nextDueAt: nextDue.toISOString(),
-        });
-      }
+      if (nextDue > now) continue;
+
+      const state = (rs?.state ?? "new") as ReviewStateType;
+      const row: Row = {
+        _id: String(card._id),
+        lectureId: String(card.lectureId),
+        courseId: lectureToCourse[String(card.lectureId)] ?? "",
+        front: card.front,
+        back: card.back,
+        cardType: card.cardType,
+        topic: card.topic,
+        state,
+        nextDueAt: nextDue.toISOString(),
+      };
+
+      if (state === "relearning") relearning.push(row);
+      else if (state === "learning") learning.push(row);
+      else if (state === "review") reviewDue.push(row);
+      else newCards.push(row);
     }
 
-    due.sort((a, b) => new Date(a.nextDueAt).getTime() - new Date(b.nextDueAt).getTime());
-    const limited = due.slice(0, MAX_DUE);
+    const queue = [
+      ...shuffle(relearning),
+      ...shuffle(learning),
+      ...shuffle(reviewDue),
+      ...shuffle(newCards).slice(0, newSlotsLeft),
+    ].slice(0, MAX_QUEUE);
 
-    return NextResponse.json(limited);
+    return NextResponse.json(queue);
   } catch (e) {
     console.error("GET /api/review/due", e);
     return NextResponse.json(

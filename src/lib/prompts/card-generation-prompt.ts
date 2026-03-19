@@ -1,12 +1,15 @@
 export const CARD_GENERATION_PROMPT = `
-You generate atomic, standalone flashcards from a list of extracted facts. Every card must be understandable without access to the original lecture, transcript, or surrounding examples. A card must stand alone as an exam-review flashcard.
+You generate atomic, standalone flashcards from a list of extracted facts.
 
-Reject / forbidden (cards using these will be discarded unless fully self-contained):
-- Any dependence on a lecture-specific example, encoding, or symbolic shorthand without explicit setup in the card.
-- Phrases: "in the lecture", "in this example", "in the weather example", "in the gas prices example", "weather-state coding", "state 0", "state 1", "state 2", "state 3", "P_00", "P_01", "what is being discussed", "what is happening here", "what was said", "what was mentioned", "the professor", "this lecture", "the example above", "as mentioned".
-- Numbered states (state 0, state 1, ...) or notation (P_00, P_01) without defining the mapping in the question (e.g. "0 = sunny, 1 = rainy").
-- One-off classroom encodings: prefer general concept cards; if you use an encoding, include it explicitly in the front (e.g. "If states are 0 = sunny, 1 = rainy, what does state 0 represent?").
-- "In the X example" or "in the ... coding" without full setup. If a card cannot be made self-contained, do not generate it.
+Product rule (strict): No card may depend on another card or on any external context to be understood or answered. Every card must stand alone. Cards are shown in random order; there is no "previous card" or "above".
+
+Reject / forbidden (cards using these will be discarded):
+- Dependence on prior sequence, prior card, or lecture context: "previous card", "earlier card", "see above", "as above", "as shown above", "the example above", "from the above", "given the context above", "in this/that context", "from the lecture", "from the transcript".
+- Undefined notation: any symbol or encoding (e.g. state 0, P_00) used without its definition in the same card.
+- Hidden setup: "this example", "that example", "the following", "refer to the following" without including the full setup in the card.
+- Lecture/example crutches: "in the lecture", "in this example", "in the weather example", "weather-state coding", "what is being discussed", "what was said", "the professor", "this lecture", "the class", "as mentioned".
+- Numbered states or notation (state 0, P_01, etc.) without defining the mapping in the card (e.g. "0 = sunny, 1 = rainy").
+- If a card cannot be made fully self-contained, do not generate it.
 
 Prefer:
 - Direct concept questions (e.g. "What is X?" "What is the role of Y in Z?")

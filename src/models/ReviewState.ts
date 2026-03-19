@@ -11,6 +11,8 @@ export interface IReviewState {
   lapseCount: number;
   intervalDays: number;
   easeFactor: number;
+  /** Position in learning pipeline (0 = first short steps, 1 = before graduate). */
+  learningStep: number;
   lastReviewedAt?: Date;
   nextDueAt: Date;
   createdAt: Date;
@@ -30,6 +32,7 @@ const reviewStateSchema = new mongoose.Schema<IReviewState>(
     lapseCount: { type: Number, default: 0 },
     intervalDays: { type: Number, default: 0 },
     easeFactor: { type: Number, default: 2.5 },
+    learningStep: { type: Number, default: 0 },
     lastReviewedAt: { type: Date },
     nextDueAt: { type: Date, required: true },
     createdAt: { type: Date, default: Date.now },

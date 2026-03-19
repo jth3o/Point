@@ -97,7 +97,9 @@ export function StudySession({ courseId }: { courseId?: string }) {
     return (
       <div className="rounded-lg border border-[var(--border)] p-8 text-center">
         <p className="text-[var(--muted-foreground)]">No cards due right now.</p>
-        <p className="text-sm text-[var(--muted-foreground)] mt-2">Come back later or add more cards from your lectures.</p>
+        <p className="text-sm text-[var(--muted-foreground)] mt-2">
+          Come back later or add more cards from your lectures.
+        </p>
       </div>
     );
   }

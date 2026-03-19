@@ -61,6 +61,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         userId,
         cardId,
         state: "new",
+        learningStep: 0,
         reps: 0,
         lapseCount: 0,
         intervalDays: 0,
@@ -71,6 +72,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const next = computeNextReview(now, {
       state: rs.state as "new" | "learning" | "review" | "relearning",
+      learningStep: rs.learningStep ?? 0,
       reps: rs.reps,
       lapseCount: rs.lapseCount,
       intervalDays: rs.intervalDays,
@@ -79,6 +81,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
 
     rs.state = next.state;
+    rs.learningStep = next.learningStep;
     rs.reps = next.reps;
     rs.lapseCount = next.lapseCount;
     rs.intervalDays = next.intervalDays;

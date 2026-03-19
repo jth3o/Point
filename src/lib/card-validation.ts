@@ -1,62 +1,97 @@
 /**
- * Returns true if the card should be rejected as context-dependent (lecture/example-dependent).
- * Used to filter generated cards before saving so only self-contained, exam-style cards are stored.
+ * Point self-contained-card rubric (validation enforces the reject criteria below).
+ *
+ * A valid card must be:
+ * 1. self-contained
+ * 2. atomic
+ * 3. explicit in its setup when needed
+ * 4. recall-worthy
+ * 5. clearly answerable
+ *
+ * Reject if:
+ * - depends on lecture context
+ * - depends on another card
+ * - uses undefined notation, labels, symbols, or encodings
+ * - refers to hidden figures/tables/examples/models
+ * - tests low-value trivia (handled mainly in prompt)
+ * - tests more than one idea at once (handled mainly in prompt)
+ *
+ * Returns true when the card should be rejected (fails one or more criteria).
  */
 
-const LOWER_FRONT = (f: string) => f.toLowerCase().trim();
-const LOWER_BACK = (b: string) => b.toLowerCase().trim();
+const LOWER = (s: string) => s.toLowerCase().trim();
 
-/** Phrases that almost always indicate lecture-scene or undefined context. Reject if present. */
-const ALWAYS_FORBIDDEN = [
+// —— Depends on lecture context ———
+const LECTURE_CONTEXT = [
   "in the lecture",
-  "in this example",
-  "in the weather example",
-  "in the gas prices example",
-  "weather-state coding",
-  "weather state coding",
+  "this lecture",
+  "the class",
+  "the professor",
+  "what was said",
+  "what was mentioned",
+  "what was discussed",
   "what is being discussed",
   "what is happening here",
   "what does this mean here",
-  "what was said",
-  "what was mentioned",
-  "the professor",
-  "this lecture",
-  "the class",
-  "the example above",
-  "what was discussed",
   "as mentioned",
   "in the example",
-  "in the coding",
+  "in this example",
+  "from the lecture",
+  "from this lecture",
+  "from the example",
+  "from the transcript",
 ] as const;
 
-/** Pattern: "in the [something] example" (e.g. "in the weather example") */
-const IN_THE_X_EXAMPLE = /\bin\s+the\s+\w+\s+example\b/i;
+// —— Depends on another card / sequence ———
+const CROSS_CARD = [
+  "previous card",
+  "previous cards",
+  "earlier card",
+  "earlier cards",
+  "see above",
+  "as above",
+  "as shown above",
+  "refer to the above",
+  "from the above",
+  "from above",
+  "in the card above",
+  "in the question above",
+  "the example above",
+  "from the previous",
+  "from the earlier",
+  "given the context above",
+  "in this context",
+  "in that context",
+] as const;
 
-/** Numbered states or transition notation without definition. */
-const STATE_OR_MATRIX = /\b(state\s+[0-3]|P_0[0-9]|P_1[0-9])\b/i;
-/** Card has explicit mapping/definition for states or symbols (e.g. "0 = sunny", "state 0 represent", "P_00 is"). */
-const HAS_EXPLICIT_MAPPING = /(\b[0-3]\s*=\s*\S+|\bstate\s+[0-3]\s*(=|represent|denote|means?|is\s)|P_0[0-9]\s*(=|represent|denote|means?|is\s)|encoding\s*:|\bwhere\s+[0-3]\s*=)/i;
+// —— Undefined notation/labels/symbols/encodings (reference without definition in card) ———
+const UNDEFINED_REF = /\b(the|this|that)\s+(symbol|variable|label|encoding|notation)\b/i;
 
-/** "coding" in a context that suggests undefined encoding (e.g. "weather-state coding" without definition). */
-const CODING_WITHOUT_SETUP = /\b(weather[- ]?state|state)\s+coding\b/i;
-const HAS_CODING_SETUP = /(\b(encoding|state)\s*(:|\s+is\s+|\s+=\s+)|0\s*=\s*\w+|1\s*=\s*\w+|state\s+0\s+represent)/i;
+// —— Hidden figures/tables/examples/models ———
+const NAMED_EXAMPLE_REF = /\bin\s+the\s+\w+\s+example\b/i;
+const HIDDEN_FIGURE_OR_MODEL = /\b(the|this|that)\s+(example|context|setup|model|diagram|figure|table|matrix|graph)\b/i;
+const REFER_ELSEWHERE = /\b(refer to|see|as in)\s+(the\s+)?(following|below)\b/i;
+
+// —— Not self-contained (options or list not in card) ———
+const IMPLIED_EXTERNAL_LIST = /\bwhich\s+of\s+the\s+following\b/i;
 
 export function isContextDependentCard(front: string, back: string): boolean {
-  const f = LOWER_FRONT(front);
-  const b = LOWER_BACK(back);
-  const combined = `${f} ${b}`;
+  const f = LOWER(front);
+  const b = LOWER(back);
 
-  for (const phrase of ALWAYS_FORBIDDEN) {
+  for (const phrase of LECTURE_CONTEXT) {
     if (f.includes(phrase) || b.includes(phrase)) return true;
   }
 
-  if (IN_THE_X_EXAMPLE.test(front) || IN_THE_X_EXAMPLE.test(back)) return true;
+  for (const phrase of CROSS_CARD) {
+    if (f.includes(phrase) || b.includes(phrase)) return true;
+  }
 
-  if (STATE_OR_MATRIX.test(combined) && !HAS_EXPLICIT_MAPPING.test(combined)) return true;
-
-  if (CODING_WITHOUT_SETUP.test(combined) && !HAS_CODING_SETUP.test(combined)) return true;
-
-  if (/\bstate\s+[0-3]\b/i.test(combined) && !HAS_EXPLICIT_MAPPING.test(combined)) return true;
+  if (UNDEFINED_REF.test(front) || UNDEFINED_REF.test(back)) return true;
+  if (NAMED_EXAMPLE_REF.test(front) || NAMED_EXAMPLE_REF.test(back)) return true;
+  if (HIDDEN_FIGURE_OR_MODEL.test(front) || HIDDEN_FIGURE_OR_MODEL.test(back)) return true;
+  if (REFER_ELSEWHERE.test(front) || REFER_ELSEWHERE.test(back)) return true;
+  if (IMPLIED_EXTERNAL_LIST.test(front) || IMPLIED_EXTERNAL_LIST.test(back)) return true;
 
   return false;
 }
