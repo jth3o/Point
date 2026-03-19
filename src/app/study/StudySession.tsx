@@ -106,9 +106,6 @@ export function StudySession({ courseId }: { courseId?: string }) {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-[var(--muted-foreground)]">
-        Card {index + 1} of {cards.length}
-      </p>
       <div className="relative rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 min-h-[200px] flex flex-col">
         {revealed && (
           <div className="absolute top-3 right-3">
