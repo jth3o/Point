@@ -22,9 +22,6 @@ export default async function DashboardPage() {
           <Button asChild variant="outline" size="sm">
             <Link href="/cards">Cards</Link>
           </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/">Home</Link>
-          </Button>
         </div>
       </header>
 
