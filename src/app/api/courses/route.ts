@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
-import { Course } from "@/models";
+import { Course, type CourseCardCoverageMode } from "@/models";
 
 export async function GET() {
   try {
@@ -35,8 +35,29 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    let cardCoverageMode: CourseCardCoverageMode | undefined;
+    if (body?.cardCoverageMode !== undefined && body?.cardCoverageMode !== null) {
+      if (
+        body.cardCoverageMode !== "high" &&
+        body.cardCoverageMode !== "balanced" &&
+        body.cardCoverageMode !== "compressed"
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "cardCoverageMode must be one of: high, balanced, compressed",
+          },
+          { status: 400 }
+        );
+      }
+      cardCoverageMode = body.cardCoverageMode;
+    }
     await connectDB();
-    const course = await Course.create({ userId, title });
+    const course = await Course.create({
+      userId,
+      title,
+      cardCoverageMode: cardCoverageMode ?? "balanced",
+    });
     return NextResponse.json(course);
   } catch (e) {
     console.error("POST /api/courses", e);

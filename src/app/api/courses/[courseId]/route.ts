@@ -42,6 +42,58 @@ export async function GET(
   }
 }
 
+export async function PATCH(
+  request: NextRequest,
+  context: RouteContext
+) {
+  try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { courseId } = await context.params;
+    if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+      return NextResponse.json({ error: "Invalid course id" }, { status: 400 });
+    }
+    await connectDB();
+    const course = await Course.findOne({ _id: courseId, userId });
+    if (!course) {
+      return NextResponse.json({ error: "Course not found" }, { status: 404 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    if (body.cardCoverageMode !== undefined && body.cardCoverageMode !== null) {
+      if (
+        body.cardCoverageMode !== "high" &&
+        body.cardCoverageMode !== "balanced" &&
+        body.cardCoverageMode !== "compressed"
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "cardCoverageMode must be one of: high, balanced, compressed",
+          },
+          { status: 400 }
+        );
+      }
+      course.cardCoverageMode = body.cardCoverageMode;
+    }
+
+    if (typeof body.title === "string" && body.title.trim()) {
+      course.title = body.title.trim();
+    }
+
+    await course.save();
+    return NextResponse.json(course.toObject());
+  } catch (e) {
+    console.error("PATCH /api/courses/[courseId]", e);
+    return NextResponse.json(
+      { error: "Failed to update course" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function DELETE(
   _request: NextRequest,
   context: RouteContext

@@ -31,7 +31,9 @@ If a card cannot be made self-contained, discard it instead of generating it.
 Quality and scope:
 - If a fact cannot be turned into a self-contained card, do not generate a card from it. Skip it.
 - Generate cards ONLY from the provided facts. Do not invent information. Every card must reference at least one fact via source_fact_indices (0-based index into the facts list).
-- A fact may be used by multiple cards; a card may reference multiple facts if they form one atomic idea.
+- The user message gives a **card count band** for this course’s coverage mode—follow it. Do not exceed the maximum; do not pad with low-value duplicates.
+- A fact may be used by multiple cards when each card tests a distinct angle; a card may reference multiple facts only if they form one atomic, self-contained question.
+- Skip lecture scaffolding, redundant rephrasings, and context-dependent items (same rules as above).
 - Cards should feel like exam-review flashcards: atomic and precise.
 
 Format:

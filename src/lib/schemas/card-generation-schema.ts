@@ -6,6 +6,7 @@ export const cardGenerationSchema = {
     properties: {
       cards: {
         type: "array",
+        maxItems: 150,
         items: {
           type: "object",
           additionalProperties: false,

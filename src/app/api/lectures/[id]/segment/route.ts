@@ -7,7 +7,11 @@ import { Lecture, TranscriptSegment } from "@/models";
 import { parseVtt } from "@/lib/vtt-parser";
 import { segmentTranscript } from "@/lib/segmenter";
 
-const DEFAULT_MAX_CHUNK_CHARS = 1600;
+/**
+ * Balance: larger than legacy 1600 (fewer segments) but below 2400 so each
+ * segment stays lighter inside batched extraction (better latency per call).
+ */
+const DEFAULT_MAX_CHUNK_CHARS = 2000;
 
 /**
  * Parse VTT (if not already), segment into chunks, and store TranscriptSegments.

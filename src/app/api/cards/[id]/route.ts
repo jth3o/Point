@@ -3,7 +3,16 @@ import mongoose from "mongoose";
 import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { isCardOwnedByUser } from "@/lib/ownership";
-import { Card, ReviewState, ReviewLog } from "@/models";
+import {
+  Card,
+  ReviewState,
+  ReviewLog,
+  Lecture,
+  CardDeletionLog,
+  type ICard,
+  type ILecture,
+} from "@/models";
+import { parseCardDeleteReason } from "@/lib/card-deletion-reasons";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -56,12 +65,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
 /**
  * DELETE /api/cards/[id]
- * Delete card and related ReviewState and ReviewLog. No orphans.
+ * Body: `{ "reason": "not_relevant" | "incorrect_information" | "bad_wording" }` (required).
+ * Logs deletion, then removes ReviewState, ReviewLog, and Card.
  */
-export async function DELETE(
-  _request: NextRequest,
-  context: RouteContext
-) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
     const userId = await getAuthUserId();
     if (!userId) {
@@ -72,11 +79,48 @@ export async function DELETE(
       return NextResponse.json({ error: "Invalid card id" }, { status: 400 });
     }
 
+    const body = await request.json().catch(() => ({}));
+    const reason = parseCardDeleteReason(body?.reason);
+    if (!reason) {
+      return NextResponse.json(
+        {
+          error:
+            "Delete reason is required. Send JSON body: { \"reason\": \"not_relevant\" | \"incorrect_information\" | \"bad_wording\" }",
+        },
+        { status: 400 }
+      );
+    }
+
     await connectDB();
-    const card = await Card.findById(id).select("lectureId").lean() as { lectureId?: unknown } | null;
-    if (!card || !card.lectureId || !(await isCardOwnedByUser(String(card.lectureId), userId))) {
+    const card = (await Card.findById(id).lean()) as ICard | null;
+    if (
+      !card ||
+      !card.lectureId ||
+      !(await isCardOwnedByUser(String(card.lectureId), userId))
+    ) {
       return NextResponse.json({ error: "Card not found" }, { status: 404 });
     }
+
+    const lecture = (await Lecture.findById(card.lectureId)
+      .select("courseId")
+      .lean()) as Pick<ILecture, "courseId"> | null;
+    if (!lecture?.courseId) {
+      return NextResponse.json({ error: "Lecture not found" }, { status: 404 });
+    }
+
+    await CardDeletionLog.create({
+      userId,
+      cardId: card._id,
+      lectureId: card.lectureId,
+      courseId: lecture.courseId,
+      deleteReason: reason,
+      deletedAt: new Date(),
+      snapshotFront: card.front,
+      snapshotBack: card.back,
+      snapshotCardType: card.cardType,
+      snapshotTopic: card.topic,
+      snapshotDifficultyEstimate: card.difficultyEstimate,
+    });
 
     await ReviewState.deleteMany({ cardId: id });
     await ReviewLog.deleteMany({ cardId: id });

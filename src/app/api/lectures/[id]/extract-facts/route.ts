@@ -4,9 +4,41 @@ import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { isLectureOwnedByUser } from "@/lib/ownership";
 import { Lecture, TranscriptSegment, Fact } from "@/models";
-import { extractFactsFromSegment } from "@/lib/services/fact-extraction";
+import {
+  DEFAULT_EXTRACTION_BATCH_MAX_CHARS,
+  groupSegmentsIntoBatches,
+  normalizeChunkForExtraction,
+  resolveSegmentIdForFact,
+} from "@/lib/fact-extraction-batch";
+import { extractFactsFromSegmentBatch } from "@/lib/services/fact-extraction";
+import { logPipeline } from "@/lib/pipeline-log";
 
-const EXTRACT_CONCURRENCY = 5;
+/** Parallel extraction calls (rate-limit aware; was 2 and became a wall-clock bottleneck). */
+const BATCH_CONCURRENCY = 4;
+
+function extractionInputStats(
+  batches: Array<Array<{ cleanedText: string }>>
+): {
+  avgBatchChars: number;
+  maxBatchChars: number;
+  totalInputChars: number;
+} {
+  if (batches.length === 0) {
+    return { avgBatchChars: 0, maxBatchChars: 0, totalInputChars: 0 };
+  }
+  const perBatch = batches.map((b) =>
+    b.reduce(
+      (sum, s) => sum + normalizeChunkForExtraction(s.cleanedText).length,
+      0
+    )
+  );
+  const totalInputChars = perBatch.reduce((a, c) => a + c, 0);
+  return {
+    avgBatchChars: Math.round(totalInputChars / batches.length),
+    maxBatchChars: Math.max(...perBatch),
+    totalInputChars,
+  };
+}
 
 async function runWithConcurrency<T, R>(
   items: T[],
@@ -29,6 +61,7 @@ type RouteContext = {
 };
 
 export async function POST(_request: NextRequest, context: RouteContext) {
+  const started = Date.now();
   try {
     const userId = await getAuthUserId();
     if (!userId) {
@@ -68,30 +101,54 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
     await Fact.deleteMany({ lectureId: id });
 
-    const segmentResults = await runWithConcurrency(
-      segments,
-      async (segment) => {
-        const result = await extractFactsFromSegment({
-          cleanedText: segment.cleanedText,
-          startTime: String(segment.startTime),
-          endTime: String(segment.endTime),
-        });
-        return { segment, result };
+    const batches = groupSegmentsIntoBatches(segments);
+    const inputStats = extractionInputStats(batches);
+    logPipeline("extract_facts_start", id, {
+      segmentCount: segments.length,
+      batchCount: batches.length,
+      modelCalls: batches.length,
+      batchMaxChars: DEFAULT_EXTRACTION_BATCH_MAX_CHARS,
+      extractionConcurrency: BATCH_CONCURRENCY,
+      avgBatchChars: inputStats.avgBatchChars,
+      maxBatchChars: inputStats.maxBatchChars,
+    });
+
+    const batchResults = await runWithConcurrency(
+      batches,
+      async (batch) => {
+        const parts = batch.map((s) => ({
+          startTime: s.startTime,
+          endTime: s.endTime,
+          cleanedText: normalizeChunkForExtraction(s.cleanedText),
+        }));
+        const result = await extractFactsFromSegmentBatch(parts);
+        return { batch, result };
       },
-      EXTRACT_CONCURRENCY
+      BATCH_CONCURRENCY
     );
 
     const createdFacts = [];
-    for (const { segment, result } of segmentResults) {
+    let factCountFromModel = 0;
+    for (const { batch, result } of batchResults) {
+      factCountFromModel += result.facts.length;
+      const batchLean = batch.map((s) => ({
+        _id: s._id,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        cleanedText: normalizeChunkForExtraction(s.cleanedText),
+      }));
       for (const fact of result.facts) {
+        const segmentId = resolveSegmentIdForFact(fact, batchLean);
+        const st = Number(fact.start_time);
+        const et = Number(fact.end_time);
         const created = await Fact.create({
           lectureId: id,
-          segmentId: segment._id,
+          segmentId,
           factText: fact.fact_text,
           factType: fact.fact_type,
           supportingQuote: fact.supporting_quote,
-          startTime: fact.start_time,
-          endTime: fact.end_time,
+          startTime: Number.isFinite(st) ? st : batch[0]!.startTime,
+          endTime: Number.isFinite(et) ? et : batch[0]!.endTime,
           confidence: fact.confidence,
           importance: fact.importance,
           tags: fact.tags,
@@ -105,14 +162,36 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       processingStatus: "facts_ready",
     });
 
+    const elapsedMs = Date.now() - started;
+    logPipeline("extract_facts_done", id, {
+      segmentCount: segments.length,
+      batchCount: batches.length,
+      modelCalls: batches.length,
+      batchMaxChars: DEFAULT_EXTRACTION_BATCH_MAX_CHARS,
+      extractionConcurrency: BATCH_CONCURRENCY,
+      avgBatchChars: inputStats.avgBatchChars,
+      maxBatchChars: inputStats.maxBatchChars,
+      totalInputChars: inputStats.totalInputChars,
+      factsExtracted: createdFacts.length,
+      factsFromModel: factCountFromModel,
+      elapsedMs,
+    });
+
     return NextResponse.json({
       success: true,
       lectureId: id,
       factsCreated: createdFacts.length,
+      extractionBatches: batches.length,
+      extractionModelCalls: batches.length,
+      extractionConcurrency: BATCH_CONCURRENCY,
+      batchMaxChars: DEFAULT_EXTRACTION_BATCH_MAX_CHARS,
+      avgBatchChars: inputStats.avgBatchChars,
+      maxBatchChars: inputStats.maxBatchChars,
+      elapsedMs,
     });
-    } catch (error: unknown) {
+  } catch (error: unknown) {
     console.error("Extract facts route error:", error);
-  
+
     return NextResponse.json(
       {
         success: false,

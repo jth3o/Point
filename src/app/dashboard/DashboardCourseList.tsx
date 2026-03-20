@@ -8,11 +8,15 @@ import { Card, CardContent } from "@/components/ui/card";
 
 type Course = { _id: string; title: string; createdAt: string };
 
+type CardCoverageOption = "high" | "balanced" | "compressed";
+
 export function DashboardCourseList() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
+  const [cardCoverageMode, setCardCoverageMode] =
+    useState<CardCoverageOption>("balanced");
   const [creating, setCreating] = useState(false);
 
   const fetchCourses = async () => {
@@ -54,13 +58,14 @@ export function DashboardCourseList() {
       const res = await fetch("/api/courses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, cardCoverageMode }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error || "Failed to create course");
       }
       setNewTitle("");
+      setCardCoverageMode("balanced");
       await fetchCourses();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -75,14 +80,41 @@ export function DashboardCourseList() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <Input
-          placeholder="New course title"
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && createCourse()}
-        />
-        <Button onClick={createCourse} disabled={creating || !newTitle.trim()}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-2">
+        <div className="flex-1 space-y-1">
+          <label htmlFor="new-course-title" className="text-sm font-medium">
+            Course title
+          </label>
+          <Input
+            id="new-course-title"
+            placeholder="New course title"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && createCourse()}
+          />
+        </div>
+        <div className="w-full space-y-1 sm:w-56">
+          <label htmlFor="card-coverage" className="text-sm font-medium">
+            Card coverage
+          </label>
+          <select
+            id="card-coverage"
+            className="flex h-9 w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            value={cardCoverageMode}
+            onChange={(e) =>
+              setCardCoverageMode(e.target.value as CardCoverageOption)
+            }
+          >
+            <option value="high">High coverage</option>
+            <option value="balanced">Balanced coverage</option>
+            <option value="compressed">Compressed coverage</option>
+          </select>
+        </div>
+        <Button
+          className="shrink-0"
+          onClick={createCourse}
+          disabled={creating || !newTitle.trim()}
+        >
           {creating ? "Creating…" : "Create course"}
         </Button>
       </div>

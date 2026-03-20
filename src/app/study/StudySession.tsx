@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DeleteCardReasonDialog } from "@/components/DeleteCardReasonDialog";
+import type { CardDeleteReason } from "@/lib/card-deletion-reasons";
 
 type DueCard = {
   _id: string;
@@ -25,6 +27,7 @@ export function StudySession({ courseId }: { courseId?: string }) {
   const [helpText, setHelpText] = useState("");
   const [helpLoading, setHelpLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<DueCard | null>(null);
 
   const fetchDue = async () => {
     setLoading(true);
@@ -104,8 +107,34 @@ export function StudySession({ courseId }: { courseId?: string }) {
     );
   }
 
+  const confirmStudyDelete = async (reason: CardDeleteReason) => {
+    if (!pendingDelete) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/cards/${pendingDelete._id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      setPendingDelete(null);
+      await fetchDue();
+    } catch {
+      setError("Failed to delete card.");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      <DeleteCardReasonDialog
+        open={pendingDelete !== null}
+        onCancel={() => !deleteLoading && setPendingDelete(null)}
+        onConfirm={confirmStudyDelete}
+        loading={deleteLoading}
+        preview={pendingDelete?.front}
+      />
       <div className="relative rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 min-h-[200px] flex flex-col">
         {revealed && (
           <div className="absolute top-3 right-3">
@@ -178,20 +207,10 @@ export function StudySession({ courseId }: { courseId?: string }) {
                 <button
                   type="button"
                   className="block w-full px-3 py-2 text-left text-sm text-[var(--destructive)] hover:bg-[var(--accent)] disabled:opacity-50"
-                  onClick={async () => {
+                  onClick={() => {
                     setMenuOpen(false);
                     if (!current || deleteLoading) return;
-                    if (!confirm("Delete this card? This cannot be undone.")) return;
-                    setDeleteLoading(true);
-                    try {
-                      const res = await fetch(`/api/cards/${current._id}`, { method: "DELETE" });
-                      if (!res.ok) throw new Error("Failed to delete");
-                      await fetchDue();
-                    } catch {
-                      setError("Failed to delete card.");
-                    } finally {
-                      setDeleteLoading(false);
-                    }
+                    setPendingDelete(current);
                   }}
                   disabled={deleteLoading}
                 >

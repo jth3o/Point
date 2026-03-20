@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DeleteCardReasonDialog } from "@/components/DeleteCardReasonDialog";
+import type { CardDeleteReason } from "@/lib/card-deletion-reasons";
 
 type CardItem = {
   _id: string;
@@ -30,6 +32,8 @@ export function CardManagement() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFront, setEditFront] = useState("");
   const [editBack, setEditBack] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<CardItem | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const fetchLectures = async () => {
     try {
@@ -102,14 +106,22 @@ export function CardManagement() {
     setEditingId(null);
   };
 
-  const deleteCard = async (c: CardItem) => {
-    if (!confirm("Delete this card? This cannot be undone.")) return;
+  const confirmDeleteCard = async (reason: CardDeleteReason) => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
     try {
-      const res = await fetch(`/api/cards/${c._id}`, { method: "DELETE" });
+      const res = await fetch(`/api/cards/${deleteTarget._id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
       if (!res.ok) throw new Error("Failed to delete");
+      setDeleteTarget(null);
       fetchCards();
     } catch {
       // could set error state
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -125,6 +137,13 @@ export function CardManagement() {
 
   return (
     <div className="space-y-6">
+      <DeleteCardReasonDialog
+        open={deleteTarget !== null}
+        onCancel={() => !deleteLoading && setDeleteTarget(null)}
+        onConfirm={confirmDeleteCard}
+        loading={deleteLoading}
+        preview={deleteTarget?.front}
+      />
       <div className="rounded-lg border border-[var(--border)] p-4 flex flex-wrap gap-4 items-end">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-[var(--muted-foreground)]">Lecture</span>
@@ -199,7 +218,7 @@ export function CardManagement() {
                   <p className="text-sm text-[var(--muted-foreground)] mt-1">{c.back}</p>
                   <div className="flex gap-2 mt-3">
                     <Button size="sm" variant="outline" onClick={() => startEdit(c)}>Edit</Button>
-                    <Button size="sm" variant="outline" onClick={() => deleteCard(c)}>Delete</Button>
+                    <Button size="sm" variant="outline" onClick={() => setDeleteTarget(c)}>Delete</Button>
                     {!c.approved && (
                       <Button size="sm" variant="secondary" onClick={() => approve(c)}>Approve</Button>
                     )}

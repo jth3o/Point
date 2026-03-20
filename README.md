@@ -42,8 +42,9 @@ Transcript-to-study-deck pipeline: upload `.vtt` lecture transcripts → extract
 | Method | Route | Description |
 |--------|--------|-------------|
 | GET | `/api/courses` | List courses |
-| POST | `/api/courses` | Create course |
+| POST | `/api/courses` | Create course (JSON: `title`, optional `cardCoverageMode`: `high` \| `balanced` \| `compressed`; default `balanced`) |
 | GET | `/api/courses/:courseId` | Get course |
+| PATCH | `/api/courses/:courseId` | Update course (`title`, `cardCoverageMode`: `high` \| `balanced` \| `compressed`) |
 | GET | `/api/courses/:courseId/lectures` | List lectures |
 | POST | `/api/lectures/upload` | Upload VTT (form: file, courseId, title?) |
 | GET | `/api/lectures/:id` | Get lecture |
