@@ -167,6 +167,31 @@ const MODE_FACT_LIMITS: Record<CardCoverageMode, number> = {
   compressed: 85,
 };
 
+/**
+ * Upper bound on facts passed to card generation: scales with lecture card-budget maxCards
+ * (~1.75×), then clamped by mode ceiling so balanced mode does not always send 140 facts when
+ * the card budget only needs mid-tens of cards.
+ */
+const FACTS_PER_MAX_CARD_MULT = 1.75;
+const MIN_FACTS_FOR_SELECTION = 12;
+
+function computeFactSelectionCap(
+  mode: CardCoverageMode,
+  maxCards: number
+): {
+  maxFacts: number;
+  modeCeiling: number;
+  budgetDerivedRaw: number;
+} {
+  const modeCeiling = MODE_FACT_LIMITS[mode];
+  const budgetDerivedRaw = Math.ceil(maxCards * FACTS_PER_MAX_CARD_MULT);
+  const maxFacts = Math.min(
+    modeCeiling,
+    Math.max(MIN_FACTS_FOR_SELECTION, budgetDerivedRaw)
+  );
+  return { maxFacts, modeCeiling, budgetDerivedRaw };
+}
+
 const MODE_CLUSTER_MULT: Record<CardCoverageMode, number> = {
   high: 1.2,
   balanced: 1.0,
@@ -188,7 +213,13 @@ export function selectFactsForCardGeneration(
   originalIndexMap: number[];
   clusters: ConceptCluster[];
   droppedFactCount: number;
+  factSelectionCap: number;
+  factCapModeCeiling: number;
+  factCapBudgetDerived: number;
 } {
+  const { maxFacts, modeCeiling, budgetDerivedRaw } =
+    computeFactSelectionCap(mode, maxCards);
+
   let worthy = filterCardWorthyFacts(allFacts);
   if (worthy.length === 0 && allFacts.length > 0) {
     worthy = [...allFacts].sort(
@@ -206,7 +237,6 @@ export function selectFactsForCardGeneration(
   );
   const prioritized = clusters.slice(0, Math.max(1, maxClusters));
   const perCluster = MODE_FACTS_PER_CLUSTER[mode];
-  const maxFacts = MODE_FACT_LIMITS[mode];
 
   const picked: FactForSelection[] = [];
   for (const cl of prioritized) {
@@ -224,6 +254,9 @@ export function selectFactsForCardGeneration(
     originalIndexMap,
     clusters,
     droppedFactCount: allFacts.length - worthy.length,
+    factSelectionCap: maxFacts,
+    factCapModeCeiling: modeCeiling,
+    factCapBudgetDerived: budgetDerivedRaw,
   };
 }
 
@@ -247,6 +280,34 @@ export function deduplicateGeneratedCards<T extends { front: string; back: strin
   const kept: T[] = [];
   const frontSets: Set<string>[] = [];
   for (const card of cards) {
+    const fTokens = tokenizeForOverlap(card.front);
+    let duplicate = false;
+    for (const prev of frontSets) {
+      if (jaccardSimilarity(fTokens, prev) >= similarityThreshold) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (duplicate) continue;
+    kept.push(card);
+    frontSets.push(fTokens);
+  }
+  return kept;
+}
+
+/** Drop generated cards whose fronts match existing deck cards (expansion pass). */
+export function deduplicateGeneratedCardsAgainstExisting<
+  T extends { front: string; back: string },
+>(
+  newCards: T[],
+  existing: Array<{ front: string; back: string }>,
+  similarityThreshold = 0.68
+): T[] {
+  const frontSets: Set<string>[] = existing.map((e) =>
+    tokenizeForOverlap(e.front)
+  );
+  const kept: T[] = [];
+  for (const card of newCards) {
     const fTokens = tokenizeForOverlap(card.front);
     let duplicate = false;
     for (const prev of frontSets) {

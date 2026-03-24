@@ -6,9 +6,11 @@ import type mongoose from "mongoose";
 
 /**
  * Max characters per extraction request (combined normalized segment text + part labels).
- * Lower than ~5k → smaller/faster completions; slightly more batches than a huge cap.
+ * Set so two ~2000-char segments usually fit: 2000 + overhead + 2000 ≈ 4050; 5000 leaves
+ * margin for variable segment sizes and the 48-char inter-segment estimate in
+ * {@link groupSegmentsIntoBatches}. Avoid pushing much higher to limit prompt size per call.
  */
-export const DEFAULT_EXTRACTION_BATCH_MAX_CHARS = 3800;
+export const DEFAULT_EXTRACTION_BATCH_MAX_CHARS = 5000;
 
 export function normalizeChunkForExtraction(text: string): string {
   return text

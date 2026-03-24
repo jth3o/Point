@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { Course, Lecture } from "@/models";
+import { triggerLectureWorker } from "@/lib/trigger-lecture-worker";
 
 const MAX_SIZE = 4 * 1024 * 1024; // 4MB
 
@@ -52,14 +53,19 @@ export async function POST(request: NextRequest) {
     const buffer = await file.arrayBuffer();
     const vttContent = new TextDecoder("utf-8").decode(buffer);
 
+    const now = new Date();
     const lecture = await Lecture.create({
       courseId,
       title: title || file.name.replace(/\.vtt$/i, ""),
       filename: file.name,
       uploadStatus: "uploaded",
-      processingStatus: "idle",
+      processingStatus: "queued",
       vttContent,
+      lastProgressAt: now,
+      processingAttemptCount: 0,
     });
+
+    triggerLectureWorker();
 
     return NextResponse.json(lecture);
   } catch (e) {

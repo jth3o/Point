@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 
+export type CardGenerationPhase = "initial" | "expansion";
+
 export interface ICard {
   _id: mongoose.Types.ObjectId;
   lectureId: mongoose.Types.ObjectId;
@@ -9,6 +11,8 @@ export interface ICard {
   cardType: string;
   topic: string;
   difficultyEstimate: number;
+  /** Mini-deck vs rest of deck (two-phase generation); omitted on older rows */
+  generationPhase?: CardGenerationPhase;
   approved: boolean;
   suspended: boolean;
   createdAt: Date;
@@ -29,6 +33,10 @@ const cardSchema = new mongoose.Schema<ICard>(
     cardType: { type: String, required: true },
     topic: { type: String, required: true },
     difficultyEstimate: { type: Number, required: true },
+    generationPhase: {
+      type: String,
+      enum: ["initial", "expansion"],
+    },
     approved: { type: Boolean, default: false },
     suspended: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },

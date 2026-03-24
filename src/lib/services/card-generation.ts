@@ -20,6 +20,10 @@ export type GenerateCardsFromFactsOptions = {
   minCardCount: number;
   maxCardCount: number;
   selectionSummary?: string;
+  /** Pass 1 vs 2 of two-phase deck build */
+  deckPhase?: "initial" | "expansion" | "full";
+  /** Expansion pass: fronts of cards already saved (avoid duplicates) */
+  expansionExistingCardFronts?: string[];
 };
 
 function coverageUserGuidance(o: GenerateCardsFromFactsOptions): string {
@@ -31,6 +35,24 @@ function coverageUserGuidance(o: GenerateCardsFromFactsOptions): string {
     return `${band} Prefer **conceptual compression**: fewer, richer cards that capture principles and relationships; merge tightly related facts when one self-contained question covers them.`;
   }
   return `${band} Balance recall and compression: one main idea per card; merge obvious duplicates in wording.`;
+}
+
+function deckPhaseNote(o: GenerateCardsFromFactsOptions): string {
+  if (o.deckPhase === "initial") {
+    return "\nPass 1 of 2: prioritize the strongest, highest-yield cards from the best facts only.";
+  }
+  if (o.deckPhase === "expansion") {
+    return "\nPass 2 of 2: add cards that cover additional facts; do not repeat topics already covered in the listed existing cards.";
+  }
+  return "";
+}
+
+function expansionAvoidBlock(fronts: string[] | undefined): string {
+  if (!fronts?.length) return "";
+  const lines = fronts
+    .slice(0, 50)
+    .map((f, i) => `${i + 1}. ${f.slice(0, 280)}`);
+  return `\n\nExisting cards in the deck (do not duplicate these topics/wording):\n${lines.join("\n")}\n`;
 }
 
 /**
@@ -46,6 +68,8 @@ export async function generateCardsFromFacts(
 
   const extra = options.selectionSummary ? `\n${options.selectionSummary}\n` : "";
   const coverageBlock = coverageUserGuidance(options);
+  const phaseNote = deckPhaseNote(options);
+  const avoidBlock = expansionAvoidBlock(options.expansionExistingCardFronts);
 
   const response = await openai.responses.create({
     model: "gpt-5.4",
@@ -53,7 +77,7 @@ export async function generateCardsFromFacts(
       { role: "system", content: CARD_GENERATION_PROMPT },
       {
         role: "user",
-        content: `Facts (indexed by 0-based position):\n\n${factsBlob}\n${extra}\n${coverageBlock}\n\nGenerate atomic flashcards. Return only valid JSON matching the schema.`,
+        content: `Facts (indexed by 0-based position):\n\n${factsBlob}\n${extra}\n${coverageBlock}${phaseNote}${avoidBlock}\n\nGenerate atomic flashcards. Return only valid JSON matching the schema.`,
       },
     ],
     text: {

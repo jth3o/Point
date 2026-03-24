@@ -2,10 +2,11 @@ import mongoose from "mongoose";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCourseById } from "@/lib/courses";
 import { requireAuth } from "@/lib/auth-server";
 import { CourseLectureList } from "./CourseLectureList";
+import { CourseExamDateForm } from "./CourseExamDateForm";
 
 export default async function CoursePage({
   params,
@@ -26,21 +27,31 @@ export default async function CoursePage({
         </Button>
         <div>
           <h1 className="text-2xl font-bold">{course.title}</h1>
-          <p className="text-[var(--muted-foreground)] text-sm mt-1">
-            Upload VTT lectures and process transcripts
-          </p>
         </div>
       </header>
 
       <Card className="mb-6">
         <CardHeader className="pb-2">
-          <CardTitle>Upload lecture</CardTitle>
-          <CardDescription>
-            Only .vtt transcript files. Max 4MB.
-          </CardDescription>
+          <CardTitle>Exam</CardTitle>
         </CardHeader>
         <CardContent>
-          <CourseLectureList courseId={courseId} courseTitle={course.title} />
+          <CourseExamDateForm
+            courseId={courseId}
+            initialNextExamIso={
+              course.nextExamDate
+                ? new Date(course.nextExamDate).toISOString()
+                : null
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader className="pb-2">
+          <CardTitle>Upload</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CourseLectureList courseId={courseId} />
         </CardContent>
       </Card>
     </main>

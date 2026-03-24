@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   COVERAGE_BASE_60MIN,
   computeLectureCardBudget,
+  computeMiniDeckBudget,
   parseCardCoverageMode,
 } from "./course-card-coverage";
 
@@ -31,6 +32,15 @@ describe("computeLectureCardBudget", () => {
   it("respects fact ceiling for tiny lectures", () => {
     const b = computeLectureCardBudget("high", 8);
     expect(b.maxCards).toBeLessThanOrEqual(24);
+  });
+});
+
+describe("computeMiniDeckBudget", () => {
+  it("caps mini-deck below full lecture budget", () => {
+    const full = computeLectureCardBudget("balanced", 80);
+    const mini = computeMiniDeckBudget(full);
+    expect(mini.maxCards).toBeLessThanOrEqual(15);
+    expect(mini.maxCards).toBeLessThanOrEqual(full.maxCards);
   });
 });
 

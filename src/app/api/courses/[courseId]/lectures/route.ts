@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { Course, Lecture, Fact, Card } from "@/models";
+import { nudgeWorkerIfCourseHasQueued } from "@/lib/lecture-pipeline/lecture-progress";
 
 export async function GET(
   _request: NextRequest,
@@ -34,6 +35,8 @@ export async function GET(
         return { ...lec, factCount, cardCount };
       })
     );
+    void nudgeWorkerIfCourseHasQueued(courseId).catch(() => undefined);
+
     return NextResponse.json(lecturesWithCounts);
   } catch (e) {
     console.error("GET /api/courses/[courseId]/lectures", e);

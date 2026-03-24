@@ -9,6 +9,8 @@ export interface ICourse {
   title: string;
   /** high = memorization-heavy, balanced = default, low = conceptual compression */
   cardCoverageMode?: CourseCardCoverageMode;
+  /** Next exam (UTC date); used for exam-week study pacing */
+  nextExamDate?: Date | null;
   createdAt: Date;
 }
 
@@ -21,6 +23,7 @@ const courseSchema = new mongoose.Schema<ICourse>(
       enum: ["high", "balanced", "compressed"],
       default: "balanced",
     },
+    nextExamDate: { type: Date },
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: false }

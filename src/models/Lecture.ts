@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 export type UploadStatus = "pending" | "uploaded" | "failed";
 export type ProcessingStatus =
   | "idle"
+  | "queued"
   | "parsing"
   | "parsed"
   | "segmenting"
@@ -10,7 +11,10 @@ export type ProcessingStatus =
   | "extracting"
   | "extracted"
   | "facts_ready"
+  /** Legacy single-pass card generation */
   | "generating_cards"
+  | "generating_initial_cards"
+  | "generating_remaining_cards"
   | "ready"
   | "error";
 
@@ -24,6 +28,14 @@ export interface ILecture {
   /** Raw VTT content stored after upload for reprocessing if needed */
   vttContent?: string;
   createdAt: Date;
+  /** When the current pipeline run was claimed from the queue */
+  processingStartedAt?: Date;
+  /** Last heartbeat / step boundary (for stale detection) */
+  lastProgressAt?: Date;
+  /** Increments each time a lecture is claimed from queued (cap stale retries) */
+  processingAttemptCount?: number;
+  /** Correlates one claim→ready run (cleared on ready) */
+  currentRunId?: string;
 }
 
 const lectureSchema = new mongoose.Schema<ILecture>(
@@ -40,6 +52,7 @@ const lectureSchema = new mongoose.Schema<ILecture>(
       type: String,
       enum: [
         "idle",
+        "queued",
         "parsing",
         "parsed",
         "segmenting",
@@ -48,6 +61,8 @@ const lectureSchema = new mongoose.Schema<ILecture>(
         "extracted",
         "facts_ready",
         "generating_cards",
+        "generating_initial_cards",
+        "generating_remaining_cards",
         "ready",
         "error",
       ],
@@ -55,6 +70,10 @@ const lectureSchema = new mongoose.Schema<ILecture>(
     },
     vttContent: { type: String },
     createdAt: { type: Date, default: Date.now },
+    processingStartedAt: { type: Date },
+    lastProgressAt: { type: Date },
+    processingAttemptCount: { type: Number, default: 0 },
+    currentRunId: { type: String },
   },
   { timestamps: false }
 );

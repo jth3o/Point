@@ -1,40 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
-import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { isLectureOwnedByUser } from "@/lib/ownership";
 import {
-  Lecture,
-  Fact,
-  Card,
-  Course,
-  type ICourse,
-  type ILecture,
-} from "@/models";
-import { generateCardsFromFacts } from "@/lib/services/card-generation";
-import { isContextDependentCard } from "@/lib/card-validation";
-import {
-  computeLectureCardBudget,
-  parseCardCoverageMode,
-  type CardCoverageMode,
-} from "@/lib/course-card-coverage";
-import {
-  deduplicateGeneratedCards,
-  remapCardSourceIndices,
-  selectFactsForCardGeneration,
-} from "@/lib/card-generation-selection";
-import { logPipeline } from "@/lib/pipeline-log";
+  performGenerateCardsPhase,
+  type DeckPhase,
+} from "@/lib/lecture-pipeline/generate-cards-step";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function POST(_request: NextRequest, context: RouteContext) {
+export async function POST(request: NextRequest, context: RouteContext) {
   const started = Date.now();
+  const { id } = await context.params;
+
   try {
     const userId = await getAuthUserId();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const { id } = await context.params;
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid lecture id" }, { status: 400 });
     }
@@ -43,143 +26,68 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Lecture not found" }, { status: 404 });
     }
 
-    await connectDB();
+    const body = (await request.json().catch(() => ({}))) as {
+      phase?: string;
+    };
+    const phase: DeckPhase =
+      body.phase === "initial" || body.phase === "remaining" || body.phase === "full"
+        ? body.phase
+        : "full";
 
-    const lecture = (await Lecture.findById(id).lean()) as ILecture | null;
-    if (!lecture) {
-      return NextResponse.json({ error: "Lecture not found" }, { status: 404 });
-    }
+    const result = await performGenerateCardsPhase(id, phase);
 
-    const course = (await Course.findOne({
-      _id: lecture.courseId,
-      userId,
-    })
-      .select("cardCoverageMode")
-      .lean()) as Pick<ICourse, "cardCoverageMode"> | null;
-    const coverageMode: CardCoverageMode = parseCardCoverageMode(
-      course?.cardCoverageMode,
-      "balanced"
-    );
-
-    const facts = await Fact.find({ lectureId: id }).sort({ createdAt: 1 }).lean();
-    if (!facts.length) {
+    if (!result.ok) {
+      const isClient =
+        result.error.includes("No facts found") ||
+        result.error.includes("No initial mini-deck") ||
+        result.error.includes("mini-deck markers");
       return NextResponse.json(
-        { error: "No facts found. Extract facts first." },
-        { status: 400 }
+        { success: false, error: result.error },
+        { status: isClient ? 400 : 500 }
       );
     }
-
-    await Lecture.findByIdAndUpdate(id, {
-      processingStatus: "generating_cards",
-    });
-
-    const budget = computeLectureCardBudget(coverageMode, facts.length);
-
-    const forSelection = facts.map((f, originalIndex) => ({
-      originalIndex,
-      factText: f.factText,
-      factType: f.factType,
-      tags: f.tags ?? [],
-      importance: f.importance,
-      confidence: f.confidence,
-    }));
-
-    const { selected, originalIndexMap, clusters, droppedFactCount } =
-      selectFactsForCardGeneration(
-        forSelection,
-        coverageMode,
-        budget.maxCards
-      );
-
-    const compactSummary = `cov=${coverageMode} facts=${selected.length}/${facts.length} cl=${clusters.length} flt=${droppedFactCount} tgt=${budget.target} max=${budget.maxCards}`;
-    logPipeline("generate_cards_start", id, {
-      factTotal: facts.length,
-      factsInPrompt: selected.length,
-      clusters: clusters.length,
-      coverageMode,
-      targetCards: budget.target,
-      maxCards: budget.maxCards,
-    });
-
-    const generated = await generateCardsFromFacts(
-      selected.map((f) => ({
-        factText: f.factText,
-        factType: f.factType,
-        tags: f.tags ?? [],
-      })),
-      {
-        coverageMode,
-        targetCardCount: budget.target,
-        minCardCount: budget.minCards,
-        maxCardCount: budget.maxCards,
-        selectionSummary: compactSummary,
-      }
-    );
-
-    const factIds = facts.map((f) => f._id);
-
-    await Card.deleteMany({ lectureId: id });
-
-    const remapped = generated.map((card) => ({
-      ...card,
-      source_fact_indices: remapCardSourceIndices(
-        card.source_fact_indices,
-        originalIndexMap
-      ),
-    }));
-
-    const deduped = deduplicateGeneratedCards(remapped);
-    const capped = deduped.slice(0, budget.maxCards);
-
-    const created = [];
-    for (const card of capped) {
-      const sourceFactIds = [...new Set(card.source_fact_indices)]
-        .filter((i) => i >= 0 && i < factIds.length)
-        .map((i) => factIds[i]!);
-      if (sourceFactIds.length === 0) continue;
-      if (isContextDependentCard(card.front, card.back)) continue;
-
-      const doc = await Card.create({
-        lectureId: id,
-        factIds: sourceFactIds,
-        front: card.front,
-        back: card.back,
-        cardType: card.card_type,
-        topic: card.topic,
-        difficultyEstimate: card.difficulty_estimate,
-        approved: false,
-        suspended: false,
-      });
-      created.push(doc);
-    }
-
-    await Lecture.findByIdAndUpdate(id, {
-      processingStatus: "ready",
-    });
 
     const elapsedMs = Date.now() - started;
-    logPipeline("generate_cards_done", id, {
-      factTotal: facts.length,
-      factsInPrompt: selected.length,
-      modelCards: generated.length,
-      afterDedupe: deduped.length,
-      cardsSaved: created.length,
-      elapsedMs,
-    });
+
+    if (phase === "full") {
+      return NextResponse.json({
+        success: true,
+        phase: "full",
+        lectureId: id,
+        cardsCreated: result.cardsCreated,
+        cardCoverageMode: result.coverageMode,
+        cardBudget: result.cardBudget,
+        factsInPrompt: result.factsInPrompt,
+        factClusterCount: result.factClusterCount,
+        elapsedMs,
+      });
+    }
+
+    if (phase === "initial") {
+      return NextResponse.json({
+        success: true,
+        phase: "initial",
+        lectureId: id,
+        cardsCreated: result.cardsCreated,
+        miniDeckBudget: result.miniDeckBudget,
+        fullBudget: result.fullBudget,
+        factsInPrompt: result.factsInPrompt,
+        factClusterCount: result.factClusterCount,
+        elapsedMs,
+      });
+    }
 
     return NextResponse.json({
       success: true,
+      phase: "remaining",
       lectureId: id,
-      cardsCreated: created.length,
-      cardCoverageMode: coverageMode,
-      cardBudget: {
-        target: budget.target,
-        min: budget.minCards,
-        max: budget.maxCards,
-        scale: budget.scale,
-      },
-      factsInPrompt: selected.length,
-      factClusterCount: clusters.length,
+      cardsCreated: result.cardsCreated,
+      skipped: result.skipped,
+      reason: result.reason,
+      cardCoverageMode: result.coverageMode,
+      cardBudget: result.cardBudget,
+      factsInPrompt: result.factsInPrompt,
+      factClusterCount: result.factClusterCount,
       elapsedMs,
     });
   } catch (error: unknown) {

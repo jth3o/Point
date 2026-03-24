@@ -2,6 +2,7 @@ import { openai } from "@/lib/openai";
 import { buildBatchedExtractionUserContent } from "@/lib/fact-extraction-batch";
 import { FACT_EXTRACTION_PROMPT } from "@/lib/prompts/fact-extraction-prompt";
 import { factExtractionSchema } from "@/lib/schemas/fact-extraction-schema";
+import { logPipeline } from "@/lib/pipeline-log";
 
 type ExtractFactsInput = {
   cleanedText: string;
@@ -38,16 +39,23 @@ export type ExtractedFactRow = {
 
 export type FactExtractionResult = { facts: ExtractedFactRow[] };
 
+export type ExtractFactsFromSegmentBatchOptions = {
+  lectureId?: string;
+  batchIndex?: number;
+};
+
 /**
  * One model call for multiple consecutive segments (fewer API round-trips).
  */
 export async function extractFactsFromSegmentBatch(
-  parts: Array<{ startTime: number; endTime: number; cleanedText: string }>
+  parts: Array<{ startTime: number; endTime: number; cleanedText: string }>,
+  opts?: ExtractFactsFromSegmentBatchOptions
 ): Promise<FactExtractionResult> {
   if (parts.length === 0) {
     return { facts: [] };
   }
   const body = buildBatchedExtractionUserContent(parts);
+  const tOpenai = Date.now();
   const response = await openai.responses.create({
     model: "gpt-5.4",
     input: [
@@ -69,6 +77,13 @@ export async function extractFactsFromSegmentBatch(
       },
     },
   });
+
+  if (opts?.lectureId) {
+    logPipeline("openai_fact_batch", opts.lectureId, {
+      batchIndex: opts.batchIndex ?? -1,
+      ms: Date.now() - tOpenai,
+    });
+  }
 
   const content = response.output_text;
 

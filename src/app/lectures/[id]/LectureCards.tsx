@@ -67,7 +67,8 @@ export function LectureCards({ lectureId }: { lectureId: string }) {
       </p>
       {cards.length === 0 ? (
         <p className="text-[var(--muted-foreground)] text-sm">
-          No cards yet. Run Process from the course page or above to generate cards.
+          No cards yet. Upload a lecture from the course page to process automatically, or run the
+          full pipeline from the summary above.
         </p>
       ) : (
         <ul className="space-y-3">

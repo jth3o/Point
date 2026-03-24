@@ -19,8 +19,8 @@ function f(
 }
 
 describe("selectFactsForCardGeneration", () => {
-  it("includes more facts for high coverage than low", () => {
-    const many = Array.from({ length: 40 }, (_, i) =>
+  it("includes more facts for high coverage than low when caps differ", () => {
+    const many = Array.from({ length: 200 }, (_, i) =>
       f({
         originalIndex: i,
         factText: `Unique concept ${i} with sufficient length for the filter to keep it in the pool.`,
@@ -30,6 +30,7 @@ describe("selectFactsForCardGeneration", () => {
     );
     const hi = selectFactsForCardGeneration(many, "high", 90);
     const lo = selectFactsForCardGeneration(many, "compressed", 45);
+    expect(hi.factSelectionCap).toBeGreaterThan(lo.factSelectionCap);
     expect(hi.selected.length).toBeGreaterThan(lo.selected.length);
   });
 });

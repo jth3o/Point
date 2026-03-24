@@ -51,7 +51,8 @@ export function LectureSegments({ lectureId }: { lectureId: string }) {
   if (segments.length === 0) {
     return (
       <p className="text-[var(--muted-foreground)] text-sm">
-        No segments yet. Run Process from the course page to process this lecture.
+        No segments yet. Processing runs in the background after upload; if this stays empty,
+        use Queue processing on the course page.
       </p>
     );
   }

@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { isLectureOwnedByUser } from "@/lib/ownership";
 import { Lecture, TranscriptSegment, Fact, Card } from "@/models";
+import { nudgeWorkerIfLectureQueued } from "@/lib/lecture-pipeline/lecture-progress";
 import type { ILecture } from "@/models/Lecture";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -32,6 +33,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       Fact.countDocuments({ lectureId: id }),
       Card.countDocuments({ lectureId: id }),
     ]);
+    void nudgeWorkerIfLectureQueued(id).catch(() => undefined);
+
     return NextResponse.json({
       processingStatus: lecture.processingStatus,
       segmentCount,

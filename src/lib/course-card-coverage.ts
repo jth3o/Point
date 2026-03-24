@@ -57,6 +57,24 @@ export function computeLectureCardBudget(
   return { target, minCards, maxCards, scale };
 }
 
+/**
+ * First mini-deck pass: ~10–15 high-yield cards, capped by the full lecture budget.
+ */
+export function computeMiniDeckBudget(fullBudget: {
+  minCards: number;
+  maxCards: number;
+  target: number;
+}): { minCards: number; maxCards: number; target: number } {
+  const maxCards = Math.min(15, fullBudget.maxCards);
+  const minCards = Math.min(10, maxCards);
+  const target = Math.round((minCards + maxCards) / 2);
+  return {
+    minCards: Math.max(6, Math.min(minCards, maxCards)),
+    maxCards,
+    target: Math.min(Math.max(target, 6), maxCards),
+  };
+}
+
 export function parseCardCoverageMode(
   value: unknown,
   fallback: CardCoverageMode = "balanced"

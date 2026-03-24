@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,35 +17,60 @@ type Lecture = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  idle: "Idle",
+  idle: "Not processed",
+  queued: "Queued",
   parsing: "Parsing…",
   parsed: "Parsed",
-  segmenting: "Segmenting…",
-  segmented: "Segmented",
-  extracting: "Extracting…",
+  segmenting: "Processing your lecture…",
+  segmented: "Extracting key facts…",
+  extracting: "Extracting key facts…",
   extracted: "Extracted",
-  facts_ready: "Facts ready",
-  generating_cards: "Generating cards…",
-  ready: "Ready",
+  facts_ready: "Building your first cards…",
+  generating_cards: "Building your deck…",
+  generating_initial_cards: "Building your first cards…",
+  generating_remaining_cards: "First cards ready · building the rest…",
+  ready: "Deck complete",
   error: "Error",
 };
 
-export function CourseLectureList({
-  courseId,
-}: {
-  courseId: string;
-  courseTitle: string;
-}) {
+/** Lecture is actively running the pipeline (not waiting in queue). */
+const PIPELINE_BUSY = new Set([
+  "segmenting",
+  "segmented",
+  "extracting",
+  "generating_initial_cards",
+  "generating_remaining_cards",
+  "generating_cards",
+]);
+
+const POLL_STATUSES = new Set([
+  "queued",
+  "segmenting",
+  "segmented",
+  "extracting",
+  "facts_ready",
+  "generating_cards",
+  "generating_initial_cards",
+  "generating_remaining_cards",
+]);
+
+function canShowRetry(processingStatus: string): boolean {
+  return processingStatus !== "ready" && !PIPELINE_BUSY.has(processingStatus);
+}
+
+export function CourseLectureList({ courseId }: { courseId: string }) {
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchLectures = async () => {
-    setLoading(true);
+  const fetchLectures = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const res = await fetch(`/api/courses/${courseId}/lectures`);
@@ -55,45 +80,72 @@ export function CourseLectureList({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
-      setLoading(false);
+      if (!opts?.silent) {
+        setLoading(false);
+      }
     }
-  };
-
-  useEffect(() => {
-    fetchLectures();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchLectures is stable; only re-run when courseId changes
   }, [courseId]);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || uploading) return;
-    const name = file.name.toLowerCase();
-    if (!name.endsWith(".vtt")) {
-      setError("Only .vtt files are supported.");
-      return;
-    }
-    setUploading(true);
+  useEffect(() => {
+    void fetchLectures();
+  }, [fetchLectures]);
+
+  useEffect(() => {
+    const needsPoll = lectures.some((l) => POLL_STATUSES.has(l.processingStatus));
+    if (!needsPoll) return;
+    const t = setInterval(() => {
+      void fetchLectures({ silent: true });
+    }, 2500);
+    return () => clearInterval(t);
+  }, [lectures, fetchLectures]);
+
+  const queueProcessing = async (lectureId: string) => {
+    setRetryingId(lectureId);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.set("file", file);
-      formData.set("courseId", courseId);
-      if (uploadTitle.trim()) formData.set("title", uploadTitle.trim());
-      const res = await fetch("/api/lectures/upload", {
+      const res = await fetch(`/api/lectures/${lectureId}/queue-processing`, {
         method: "POST",
-        body: formData,
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Upload failed");
+        throw new Error(data?.error || "Failed to queue processing");
+      }
+      await fetchLectures();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to queue processing");
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length || uploading) return;
+    setUploading(true);
+    setError(null);
+    try {
+      for (const file of Array.from(files)) {
+        const name = file.name.toLowerCase();
+        if (!name.endsWith(".vtt")) {
+          setError("Only .vtt files are supported.");
+          return;
+        }
+        const formData = new FormData();
+        formData.set("file", file);
+        formData.set("courseId", courseId);
+        if (uploadTitle.trim()) formData.set("title", uploadTitle.trim());
+        const res = await fetch("/api/lectures/upload", {
+          method: "POST",
+          body: formData,
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.error || "Upload failed");
+        }
       }
       setUploadTitle("");
       if (fileInputRef.current) fileInputRef.current.value = "";
-      const created = await res.json();
       await fetchLectures();
-      if (created?._id) {
-        runPipelineToFacts(created._id);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -101,62 +153,19 @@ export function CourseLectureList({
     }
   };
 
-  const runPipelineToFacts = async (lectureId: string) => {
-    setProcessingId(lectureId);
-    setError(null);
-    try {
-      let res = await fetch(`/api/lectures/${lectureId}/parse-vtt`, { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Parse failed");
-      }
-      res = await fetch(`/api/lectures/${lectureId}/segment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Segment failed");
-      }
-      res = await fetch(`/api/lectures/${lectureId}/extract-facts`, { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Extract facts failed");
-      }
-      await fetchLectures();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Processing failed");
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
   const deleteLecture = async (lectureId: string, title: string) => {
-    if (!confirm(`Delete lecture "${title}"? This will remove the lecture, its transcript, facts, cards, and review data.`)) return;
+    if (
+      !confirm(
+        `Delete lecture "${title}"? This will remove the lecture, its transcript, facts, cards, and review data.`
+      )
+    )
+      return;
     try {
       const res = await fetch(`/api/lectures/${lectureId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
       await fetchLectures();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
-    }
-  };
-
-  const runGenerateCards = async (lectureId: string) => {
-    setProcessingId(lectureId);
-    setError(null);
-    try {
-      const res = await fetch(`/api/lectures/${lectureId}/generate-cards`, { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Generate cards failed");
-      }
-      await fetchLectures();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Generate cards failed");
-    } finally {
-      setProcessingId(null);
     }
   };
 
@@ -167,12 +176,13 @@ export function CourseLectureList({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <label className="text-sm font-medium">VTT file</label>
+        <label className="text-sm font-medium">File</label>
         <div className="flex flex-wrap gap-2 items-center">
           <Input
             ref={fileInputRef}
             type="file"
             accept=".vtt"
+            multiple
             onChange={handleUpload}
             disabled={uploading}
             className="max-w-xs"
@@ -188,15 +198,11 @@ export function CourseLectureList({
           )}
         </div>
       </div>
-      {error && (
-        <p className="text-[var(--destructive)] text-sm">{error}</p>
-      )}
+      {error && <p className="text-[var(--destructive)] text-sm">{error}</p>}
       <div>
         <h3 className="text-sm font-medium mb-2">Lectures</h3>
         {lectures.length === 0 ? (
-          <p className="text-[var(--muted-foreground)] text-sm">
-            No lectures yet. Upload a .vtt file above.
-          </p>
+          <p className="text-[var(--muted-foreground)] text-sm">No lectures yet.</p>
         ) : (
           <ul className="space-y-2">
             {lectures.map((lec) => (
@@ -208,34 +214,23 @@ export function CourseLectureList({
                   <p className="font-medium truncate">{lec.title}</p>
                   <p className="text-xs text-[var(--muted-foreground)]">
                     {lec.filename} · {STATUS_LABEL[lec.processingStatus] ?? lec.processingStatus}
-                    {typeof lec.factCount === "number" && (
-                      <> · {lec.factCount} facts</>
-                    )}
-                    {typeof lec.cardCount === "number" && (
-                      <> · {lec.cardCount} cards</>
-                    )}
+                    {typeof lec.factCount === "number" && <> · {lec.factCount} facts</>}
+                    {typeof lec.cardCount === "number" && <> · {lec.cardCount} cards</>}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  {lec.processingStatus !== "ready" &&
-                    lec.processingStatus !== "facts_ready" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => runPipelineToFacts(lec._id)}
-                        disabled={processingId !== null}
-                      >
-                        {processingId === lec._id ? "Processing…" : "Process"}
-                      </Button>
-                    )}
-                  {lec.processingStatus === "facts_ready" && (
+                <div className="flex gap-2 flex-wrap">
+                  {canShowRetry(lec.processingStatus) && (
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => runGenerateCards(lec._id)}
-                      disabled={processingId !== null}
+                      onClick={() => void queueProcessing(lec._id)}
+                      disabled={retryingId !== null}
                     >
-                      {processingId === lec._id ? "Generating…" : "Generate cards"}
+                      {retryingId === lec._id
+                        ? "Queueing…"
+                        : lec.processingStatus === "error"
+                          ? "Retry"
+                          : "Queue processing"}
                     </Button>
                   )}
                   <Button size="sm" variant="secondary" asChild>

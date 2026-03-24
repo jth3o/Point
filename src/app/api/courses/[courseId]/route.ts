@@ -83,6 +83,21 @@ export async function PATCH(
       course.title = body.title.trim();
     }
 
+    if (body.nextExamDate !== undefined) {
+      if (body.nextExamDate === null || body.nextExamDate === "") {
+        course.set("nextExamDate", undefined);
+      } else {
+        const d = new Date(body.nextExamDate);
+        if (Number.isNaN(d.getTime())) {
+          return NextResponse.json(
+            { error: "nextExamDate must be a valid ISO date string or null" },
+            { status: 400 }
+          );
+        }
+        course.nextExamDate = d;
+      }
+    }
+
     await course.save();
     return NextResponse.json(course.toObject());
   } catch (e) {

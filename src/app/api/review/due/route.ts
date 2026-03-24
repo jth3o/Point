@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { getLectureIdsForUser } from "@/lib/ownership";
-import { Card, ReviewState, ReviewLog, Lecture } from "@/models";
+import { Card, ReviewState, ReviewLog, Lecture, Course, type ICourse } from "@/models";
 import { getInitialNextDueAt } from "@/lib/srs";
 import type { ReviewStateType } from "@/models/ReviewState";
+import { isCourseInExamWeek } from "@/lib/exam-pacing";
+import {
+  computeScaledNewTake,
+  computeSessionCap,
+  buildPriorityStudyQueue,
+  shuffleArray,
+} from "@/lib/study-queue";
 
-const MAX_QUEUE = 50;
+/** Max new cards introduced per UTC day (per queue scope / course filter). */
 const NEW_CARDS_PER_DAY = 20;
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j]!, a[i]!];
-  }
-  return a;
-}
 
 function startOfUtcDay(d: Date): Date {
   const x = new Date(d);
@@ -65,10 +64,53 @@ export async function GET(request: NextRequest) {
         return m;
       });
 
-    // Cap "new" introductions per day only within this queue scope (e.g. this course).
-    // A global count wrongly hid all new cards in other courses after 20 reviews elsewhere.
     const scopeCardIds = cards.map((c) => c._id);
-    const newIntroducedToday =
+
+    const cardIdToCourse = new Map<string, string>();
+    for (const c of cards) {
+      const cid = lectureToCourse[String(c.lectureId)];
+      if (cid) cardIdToCourse.set(String(c._id), cid);
+    }
+
+    /** Courses in exam week (≤7 days): daily new limits do not apply to their cards. */
+    const examCourseIds = new Set<string>();
+    let examModeScoped = false;
+
+    if (!courseId) {
+      const rawIds = [
+        ...new Set(
+          cards
+            .map((c) => lectureToCourse[String(c.lectureId)])
+            .filter((x): x is string => Boolean(x))
+        ),
+      ];
+      if (rawIds.length > 0) {
+        const oids = rawIds
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+          .map((id) => new mongoose.Types.ObjectId(id));
+        const cs = (await Course.find({
+          _id: { $in: oids },
+          userId,
+        })
+          .select("_id nextExamDate")
+          .lean()) as Pick<ICourse, "_id" | "nextExamDate">[];
+        for (const c of cs) {
+          if (c.nextExamDate && isCourseInExamWeek(c.nextExamDate, now)) {
+            examCourseIds.add(String(c._id));
+          }
+        }
+      }
+    } else if (mongoose.Types.ObjectId.isValid(courseId)) {
+      const course = (await Course.findOne({ _id: courseId, userId })
+        .select("nextExamDate")
+        .lean()) as Pick<ICourse, "nextExamDate"> | null;
+      if (course?.nextExamDate && isCourseInExamWeek(course.nextExamDate, now)) {
+        examModeScoped = true;
+        examCourseIds.add(courseId);
+      }
+    }
+
+    const newIntroducedTodayAll =
       scopeCardIds.length === 0
         ? []
         : await ReviewLog.distinct("cardId", {
@@ -77,7 +119,14 @@ export async function GET(request: NextRequest) {
             previousState: "new",
             cardId: { $in: scopeCardIds },
           });
-    const newSlotsLeft = Math.max(0, NEW_CARDS_PER_DAY - newIntroducedToday.length);
+
+    const countTowardDailyPace = newIntroducedTodayAll.filter((id) => {
+      const cid = cardIdToCourse.get(String(id));
+      if (!cid) return true;
+      return !examCourseIds.has(cid);
+    }).length;
+
+    const newSlotsLeft = Math.max(0, NEW_CARDS_PER_DAY - countTowardDailyPace);
 
     type Row = {
       _id: string;
@@ -120,12 +169,57 @@ export async function GET(request: NextRequest) {
       else newCards.push(row);
     }
 
-    const queue = [
-      ...shuffle(relearning),
-      ...shuffle(learning),
-      ...shuffle(reviewDue),
-      ...shuffle(newCards).slice(0, newSlotsLeft),
-    ].slice(0, MAX_QUEUE);
+    const R = relearning.length;
+    const L = learning.length;
+    const Rev = reviewDue.length;
+    const N = newCards.length;
+
+    let newTake: number;
+    let sessionCap: number;
+    let newCardsForQueue = newCards;
+    let shuffleNew: boolean | undefined;
+
+    if (examModeScoped) {
+      newTake = N;
+      sessionCap = R + L + Rev + newTake;
+    } else if (!courseId && examCourseIds.size > 0) {
+      const newExam = newCards.filter((r) => examCourseIds.has(r.courseId));
+      const newNormal = newCards.filter((r) => !examCourseIds.has(r.courseId));
+      const N_exam = newExam.length;
+      const N_normal = newNormal.length;
+      const newTake_exam = N_exam;
+      const newTake_normal = computeScaledNewTake(N_normal, newSlotsLeft);
+      newTake = newTake_exam + newTake_normal;
+
+      const examInQueue =
+        relearning.some((r) => examCourseIds.has(r.courseId)) ||
+        learning.some((r) => examCourseIds.has(r.courseId)) ||
+        reviewDue.some((r) => examCourseIds.has(r.courseId)) ||
+        N_exam > 0;
+
+      sessionCap = examInQueue
+        ? R + L + Rev + newTake
+        : computeSessionCap(R, L, Rev, newTake);
+
+      newCardsForQueue = [
+        ...shuffleArray(newExam).slice(0, newTake_exam),
+        ...shuffleArray(newNormal).slice(0, newTake_normal),
+      ];
+      shuffleNew = false;
+    } else {
+      newTake = computeScaledNewTake(N, newSlotsLeft);
+      sessionCap = computeSessionCap(R, L, Rev, newTake);
+    }
+
+    const queue = buildPriorityStudyQueue(
+      relearning,
+      learning,
+      reviewDue,
+      newCardsForQueue,
+      sessionCap,
+      newTake,
+      shuffleNew === false ? { shuffleNew: false } : undefined
+    );
 
     return NextResponse.json(queue);
   } catch (e) {
