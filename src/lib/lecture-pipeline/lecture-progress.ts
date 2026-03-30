@@ -144,15 +144,28 @@ export async function recoverStaleLectures(): Promise<{
 }
 
 /**
- * If any lecture is still queued, nudge the worker (idempotent extra wake-up).
+ * If any lecture is still queued, schedule another pass.
+ * Prefer HTTP (requires LECTURE_WORKER_SECRET) so serverless can chain invocations;
+ * otherwise best-effort setImmediate chain (local dev).
  */
 export async function triggerWorkerIfQueuedRemain(): Promise<void> {
   await connectDB();
   const n = await Lecture.countDocuments({ processingStatus: "queued" });
-  if (n > 0) {
-    const { triggerLectureWorker } = await import("@/lib/trigger-lecture-worker");
-    triggerLectureWorker();
+  if (n <= 0) return;
+
+  if (process.env.LECTURE_WORKER_SECRET) {
+    const { nudgeQueueViaHttp } = await import("@/lib/trigger-lecture-worker");
+    nudgeQueueViaHttp();
+    return;
   }
+
+  setImmediate(() => {
+    void import("@/lib/lecture-pipeline/run-process-queue-cycle")
+      .then(({ runProcessQueueCycle }) => runProcessQueueCycle())
+      .catch((e) =>
+        console.error("triggerWorkerIfQueuedRemain setImmediate chain", e)
+      );
+  });
 }
 
 /**

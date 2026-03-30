@@ -1,23 +1,24 @@
+import { unstable_after } from "next/server";
+
 /**
- * Fire-and-forget HTTP trigger for the lecture process-queue worker (no user session).
- * Does not await the worker response so callers return immediately while processing runs in another request.
+ * Schedule one process-queue cycle after the current response is sent.
+ * Avoids relying on self-HTTP for the first job (works without LECTURE_WORKER_SECRET on upload).
+ *
+ * When more lectures stay queued, {@link nudgeQueueViaHttp} + POST /api/lectures/process-queue
+ * chains additional runs if LECTURE_WORKER_SECRET is set (recommended for serverless).
  */
-export function getLectureWorkerBaseUrl(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
-  if (fromEnv) return fromEnv;
-  const vercel = process.env.VERCEL_URL;
-  if (vercel) return `https://${vercel}`;
-  return "http://localhost:3000";
+export function triggerLectureWorker(): void {
+  unstable_after(() => {
+    void import("@/lib/lecture-pipeline/run-process-queue-cycle")
+      .then(({ runProcessQueueCycle }) => runProcessQueueCycle())
+      .catch((e) => console.error("runProcessQueueCycle (unstable_after)", e));
+  });
 }
 
-export function triggerLectureWorker(): void {
+/** Chain another worker invocation over HTTP (Bearer secret). */
+export function nudgeQueueViaHttp(): void {
   const secret = process.env.LECTURE_WORKER_SECRET;
-  if (!secret) {
-    console.warn(
-      "LECTURE_WORKER_SECRET not set; lecture process-queue will not be triggered via HTTP"
-    );
-    return;
-  }
+  if (!secret) return;
   const url = `${getLectureWorkerBaseUrl()}/api/lectures/process-queue`;
   void fetch(url, {
     method: "POST",
@@ -26,5 +27,13 @@ export function triggerLectureWorker(): void {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({}),
-  }).catch((e) => console.error("triggerLectureWorker fetch failed", e));
+  }).catch((e) => console.error("nudgeQueueViaHttp fetch failed", e));
+}
+
+export function getLectureWorkerBaseUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  const vercel = process.env.VERCEL_URL;
+  if (vercel) return `https://${vercel}`;
+  return "http://localhost:3000";
 }
