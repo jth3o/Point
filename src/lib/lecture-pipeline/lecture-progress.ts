@@ -1,6 +1,7 @@
 import { connectDB } from "@/lib/db";
 import { Lecture, type ILecture } from "@/models";
 import type { ProcessingStatus } from "@/models/Lecture";
+import { queueDiag } from "./queue-diag-log";
 
 /** Busy states where the worker may be mid-pipeline (eligible for stale recovery). */
 export const STALE_BUSY_STATUSES: ProcessingStatus[] = [
@@ -151,14 +152,17 @@ export async function recoverStaleLectures(): Promise<{
 export async function triggerWorkerIfQueuedRemain(): Promise<void> {
   await connectDB();
   const n = await Lecture.countDocuments({ processingStatus: "queued" });
+  queueDiag("triggerWorkerIfQueuedRemain", { queuedRemaining: n });
   if (n <= 0) return;
 
   if (process.env.LECTURE_WORKER_SECRET) {
     const { nudgeQueueViaHttp } = await import("@/lib/trigger-lecture-worker");
+    queueDiag("triggerWorkerIfQueuedRemain.path", { path: "http_nudge" });
     nudgeQueueViaHttp();
     return;
   }
 
+  queueDiag("triggerWorkerIfQueuedRemain.path", { path: "setImmediate_chain" });
   setImmediate(() => {
     void import("@/lib/lecture-pipeline/run-process-queue-cycle")
       .then(({ runProcessQueueCycle }) => runProcessQueueCycle())

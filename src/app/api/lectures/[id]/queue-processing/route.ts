@@ -4,7 +4,8 @@ import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { isLectureOwnedByUser } from "@/lib/ownership";
 import { Lecture } from "@/models";
-import { triggerLectureWorker } from "@/lib/trigger-lecture-worker";
+import { runProcessQueueCycle } from "@/lib/lecture-pipeline/run-process-queue-cycle";
+import { queueDiag } from "@/lib/lecture-pipeline/queue-diag-log";
 
 /** Lecture is actively being worked on by the pipeline (not queued waiting). */
 const PIPELINE_BUSY = new Set([
@@ -64,12 +65,27 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       },
     });
 
-    triggerLectureWorker();
+    queueDiag("queue_processing.before_cycle", {
+      lectureId: id,
+      note: "direct_runProcessQueueCycle_no_trigger_indirection",
+    });
+    const cycle = await runProcessQueueCycle({ preferredLectureId: id });
+    queueDiag("queue_processing.after_cycle", {
+      lectureId: id,
+      processedLectureId: cycle.processedLectureId,
+      pipelineOk: cycle.pipelineOk,
+      pipelineError: cycle.pipelineError,
+    });
+
+    const updated = (await Lecture.findById(id)
+      .select("processingStatus")
+      .lean()) as { processingStatus?: string } | null;
 
     return NextResponse.json({
       success: true,
       lectureId: id,
-      processingStatus: "queued",
+      processingStatus: updated?.processingStatus ?? "unknown",
+      cycle,
     });
   } catch (e) {
     console.error("POST /api/lectures/[id]/queue-processing", e);

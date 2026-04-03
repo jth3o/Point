@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { getAuthUserId } from "@/lib/auth-server";
 import { Course, Lecture } from "@/models";
-import { triggerLectureWorker } from "@/lib/trigger-lecture-worker";
+import { kickQueueAfterLectureMutation } from "@/lib/trigger-lecture-worker";
+import { queueDiag } from "@/lib/lecture-pipeline/queue-diag-log";
 
 const MAX_SIZE = 4 * 1024 * 1024; // 4MB
 
@@ -65,7 +66,12 @@ export async function POST(request: NextRequest) {
       processingAttemptCount: 0,
     });
 
-    triggerLectureWorker();
+    queueDiag("upload.before_kick", {
+      lectureId: String(lecture._id),
+      processingStatus: lecture.processingStatus,
+    });
+    await kickQueueAfterLectureMutation();
+    queueDiag("upload.after_kick", { lectureId: String(lecture._id) });
 
     return NextResponse.json(lecture);
   } catch (e) {
