@@ -20,15 +20,15 @@ function SignInFormInner() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-8">
-      <h1 className="text-3xl font-bold mb-2">Point</h1>
-      <p className="text-[var(--muted-foreground)] mb-6 text-center max-w-md">
+      <h1 className="text-5xl font-bold mb-4">Point</h1>
+      <p className="text-lg text-[var(--muted-foreground)] mb-8 text-center max-w-md">
         Transcript to study deck. Sign in with Google to continue.
       </p>
       <div className="w-full max-w-sm space-y-3">
-        {error && <p className="text-sm text-[var(--destructive)]">{error}</p>}
+        {error && <p className="text-base text-[var(--destructive)]">{error}</p>}
         <Button
           type="button"
-          className="w-full"
+          className="w-full text-base"
           disabled={loading}
           onClick={handleGoogleSignIn}
         >
@@ -43,8 +43,8 @@ export default function SignInForm() {
   return (
     <Suspense fallback={
       <main className="min-h-screen flex flex-col items-center justify-center p-8">
-        <h1 className="text-3xl font-bold mb-2">Point</h1>
-        <p className="text-[var(--muted-foreground)]">Loading…</p>
+        <h1 className="text-5xl font-bold mb-4">Point</h1>
+        <p className="text-lg text-[var(--muted-foreground)]">Loading…</p>
       </main>
     }>
       <SignInFormInner />
