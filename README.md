@@ -1,59 +1,80 @@
 # Point
 
-Transcript-to-study-deck pipeline: upload `.vtt` lecture transcripts → extract facts → atomic flashcards → Anki-like spaced repetition.
+**Turn lecture transcripts into flashcards — automatically.**
 
-## Setup
+Point is a full-stack web app that takes `.vtt` lecture transcript files, extracts key facts using AI, generates atomic flashcards, and quizzes you using a spaced repetition scheduler (like Anki, but built in).
 
-1. **Install dependencies**
+🔗 **Live:** [point-tawny.vercel.app](https://point-tawny.vercel.app)
 
-   ```bash
-   npm install --legacy-peer-deps
-   ```
+---
 
-2. **Environment**
+## How It Works
 
-   Copy `.env.local.example` to `.env.local` and set:
+1. **Upload** a `.vtt` transcript from any lecture recording
+2. **Point parses and segments** the transcript into meaningful chunks
+3. **OpenAI extracts facts** from each segment
+4. **Flashcards are generated** automatically from those facts
+5. **Study** with a spaced repetition scheduler — cards resurface based on how well you know them
 
-   - `MONGODB_URI` — e.g. `mongodb://localhost:27017/point`
-   - `OPENAI_API_KEY` — required from Phase 3 (fact extraction / card generation)
+---
 
-3. **Run**
+## Features
 
-   ```bash
-   npm run dev
-   ```
+- 📁 **Course management** — organize lectures by course
+- 📄 **VTT upload & parsing** — automatic transcript segmentation
+- 🤖 **AI fact extraction** — OpenAI pulls key facts from each segment
+- 🃏 **Flashcard generation** — atomic cards created from extracted facts
+- 🔁 **Spaced repetition** — SRS scheduler with Again / Hard / Good / Easy ratings
+- 💡 **In-session help** — ask for an explanation or example on any card mid-review
+- 🗑️ **Card management** — edit, suspend, or delete cards with reason tracking
+- 🔐 **Authentication** — session-based auth, each user sees only their own data
 
-   Open [http://localhost:3000](http://localhost:3000).
+---
 
-## Implemented (Phase 1 & 2)
+## Tech Stack
 
-- **Phase 1:** Next.js + Tailwind + shadcn-style UI, MongoDB connection, Mongoose models (User, Course, Lecture, TranscriptSegment, Fact, Card, ReviewState, ReviewLog), env setup.
-- **Phase 2:** Course CRUD, lecture upload (VTT only), VTT parser, transcript segmentation, segment storage, dashboard/course/lecture pages, parse-vtt and segment API routes.
+| Layer | Tech |
+|---|---|
+| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS |
+| Backend | Next.js Route Handlers, Mongoose, MongoDB |
+| AI | OpenAI Responses API |
+| Auth | Custom session-based auth |
+| Deployment | Vercel |
 
-## Remaining (Phase 3+)
+---
 
-- **Phase 3:** OpenAI fact extraction, store facts, lecture page showing segments + facts.
-- **Phase 4:** OpenAI card generation, store cards, cards review UI.
-- **Phase 5:** SRS scheduler, study page, review logs, due queue.
-- **Phase 6:** Card edit/approve/suspend, filtering, polish.
+## Local Setup
 
-## API (Phase 2)
+**1. Install dependencies**
+```bash
+npm install --legacy-peer-deps
+```
+
+**2. Configure environment**
+
+Copy `.env.local.example` to `.env.local` and fill in:
+```
+MONGODB_URI=mongodb://localhost:27017/point
+OPENAI_API_KEY=sk-...
+```
+
+**3. Run**
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000)
+
+---
+
+## API Reference
 
 | Method | Route | Description |
-|--------|--------|-------------|
-| GET | `/api/courses` | List courses |
-| POST | `/api/courses` | Create course (JSON: `title`, optional `cardCoverageMode`: `high` \| `balanced` \| `compressed`; default `balanced`) |
-| GET | `/api/courses/:courseId` | Get course |
-| PATCH | `/api/courses/:courseId` | Update course (`title`, `cardCoverageMode`: `high` \| `balanced` \| `compressed`) |
-| GET | `/api/courses/:courseId/lectures` | List lectures |
-| POST | `/api/lectures/upload` | Upload VTT (form: file, courseId, title?) |
-| GET | `/api/lectures/:id` | Get lecture |
-| GET | `/api/lectures/:id/segments` | List transcript segments |
-| POST | `/api/lectures/:id/parse-vtt` | Parse VTT (no DB write of segments) |
-| POST | `/api/lectures/:id/segment` | Segment and store segments |
-
-## Tech stack
-
-- **Frontend:** Next.js (App Router), TypeScript, Tailwind CSS, shadcn-style components.
-- **Backend:** Next.js route handlers, Mongoose, MongoDB.
-- **Later:** OpenAI Responses API (server-side only).
+|---|---|---|
+| GET | `/api/courses` | List all courses |
+| POST | `/api/courses` | Create course |
+| PATCH | `/api/courses/:courseId` | Update course |
+| POST | `/api/lectures/upload` | Upload VTT file |
+| GET | `/api/lectures/:id/segments` | Get transcript segments |
+| POST | `/api/lectures/:id/segment` | Segment and store transcript |
+| GET | `/api/review/due` | Get due cards for review |
+| POST | `/api/review/rate` | Submit rating for a card |
